@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { Session } from "../types/electron"
 import {
     Table,
@@ -15,7 +15,12 @@ import {
     Gamepad2,
     Square,
     History,
-    Loader2
+    Loader2,
+    Clock,
+    Infinity,
+    Timer,
+    Bell,
+    AlertTriangle
 } from 'lucide-react'
 import {
     Dialog,
@@ -25,41 +30,81 @@ import {
     DialogHeader,
     DialogTitle
 } from "@/components/ui/dialog"
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 
+const POSTS = [1, 2, 3, 4, 5, 6]
+
 const formatDuration = (seconds: number) => {
-    const h = Math.floor(seconds / 3600)
-    const m = Math.floor((seconds % 3600) / 60)
-    const s = seconds % 60
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+    const absSeconds = Math.abs(seconds)
+    const h = Math.floor(absSeconds / 3600)
+    const m = Math.floor((absSeconds % 3600) / 60)
+    const s = absSeconds % 60
+    const sign = seconds < 0 ? "-" : ""
+    return `${sign}${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }
 
-const TimerCard: React.FC<{ session: Session; onComplete: () => void }> = ({ session, onComplete }) => {
+const TimerCard: React.FC<{
+    postNumber: number;
+    session: Session | null;
+    onStart: (post: number) => void;
+    onComplete: () => void
+}> = ({ postNumber, session, onStart, onComplete }) => {
     const [elapsed, setElapsed] = useState(0)
+    const [remaining, setRemaining] = useState<number | null>(null)
     const [isEndOpen, setIsEndOpen] = useState(false)
     const [cost, setCost] = useState(0)
+    const notifiedRef = useRef(false)
 
     useEffect(() => {
+        if (!session) return
+
         const start = new Date(session.startTime).getTime()
         const update = () => {
             const now = Date.now()
-            setElapsed(Math.floor((now - start) / 1000))
+            const elapsedSecs = Math.floor((now - start) / 1000)
+            setElapsed(elapsedSecs)
+
+            if (session.limitMinutes) {
+                const totalLimitSecs = session.limitMinutes * 60
+                const rem = totalLimitSecs - elapsedSecs
+                setRemaining(rem)
+
+                if (rem <= 0 && !notifiedRef.current) {
+                    notifiedRef.current = true
+                    new Notification("Time's Up!", {
+                        body: `PlayStation Post ${postNumber} has finished its session.`,
+                        silent: false
+                    })
+                }
+            } else {
+                setRemaining(null)
+            }
         }
+
         update()
         const interval = setInterval(update, 1000)
-        return () => clearInterval(interval)
-    }, [session.startTime])
+        return () => {
+            clearInterval(interval)
+            notifiedRef.current = false
+        }
+    }, [session, postNumber])
 
     const calculateSuggestedCost = () => {
+        if (session?.limitMinutes) {
+            // If it's a fixed time session, suggest cost based on that time
+            const matches = Math.ceil(session.limitMinutes / 14)
+            return matches * 5
+        }
         const minutes = Math.ceil(elapsed / 60)
         const matches = Math.ceil(minutes / 14)
         return matches * 5
     }
 
     const handleStop = async () => {
+        if (!session) return
         const duration = Math.ceil(elapsed / 60)
         const result = await window.api.updateSession(session.id, {
             status: 'COMPLETED',
@@ -76,6 +121,7 @@ const TimerCard: React.FC<{ session: Session; onComplete: () => void }> = ({ ses
     }
 
     const handleCancel = async () => {
+        if (!session) return
         if (!confirm("Cancel this session? No data will be saved.")) return
         const result = await window.api.updateSession(session.id, {
             status: 'CANCELLED',
@@ -84,65 +130,111 @@ const TimerCard: React.FC<{ session: Session; onComplete: () => void }> = ({ ses
         if (result.success) onComplete()
     }
 
+    if (!session) {
+        return (
+            <Card className="border-2 border-dashed border-muted/50 hover:border-primary/50 transition-colors cursor-pointer group" onClick={() => onStart(postNumber)}>
+                <CardContent className="h-[240px] flex flex-col items-center justify-center gap-4 opacity-40 group-hover:opacity-100 transition-opacity">
+                    <div className="bg-muted p-4 rounded-full group-hover:bg-primary/10 transition-colors">
+                        <Plus className="h-8 w-8 text-muted-foreground group-hover:text-primary transition-colors" />
+                    </div>
+                    <div className="text-center">
+                        <p className="font-black text-xl tracking-tighter uppercase">Post {postNumber}</p>
+                        <p className="text-xs font-bold text-muted-foreground">CLICK TO START</p>
+                    </div>
+                </CardContent>
+            </Card>
+        )
+    }
+
+    const isTimeUp = remaining !== null && remaining <= 0
+
     return (
-        <Card className="overflow-hidden border-2 border-primary/20 shadow-lg animate-in zoom-in-95">
-            <CardHeader className="bg-primary/5 flex flex-row items-center justify-between py-3">
-                <CardTitle className="text-sm font-bold flex items-center gap-2 uppercase tracking-widest text-primary/70">
-                    <Gamepad2 className="h-4 w-4" /> PS-{session.id.slice(-4)}
+        <Card className={cn(
+            "overflow-hidden border-2 shadow-lg animate-in zoom-in-95 relative",
+            isTimeUp ? "border-destructive animate-pulse shadow-destructive/20" : "border-primary/20"
+        )}>
+            <CardHeader className={cn(
+                "flex flex-row items-center justify-between py-3",
+                isTimeUp ? "bg-destructive/10" : "bg-primary/5 text-primary"
+            )}>
+                <CardTitle className="text-sm font-black flex items-center gap-2 uppercase tracking-widest">
+                    <Gamepad2 className="h-4 w-4" /> POST {postNumber}
                 </CardTitle>
-                <Badge className="bg-emerald-500 hover:bg-emerald-500 animate-pulse border-white border-2">LIVE</Badge>
-            </CardHeader>
-            <CardContent className="py-8">
-                <div className="text-5xl font-black text-center font-mono tracking-tighter text-primary">
-                    {formatDuration(elapsed)}
+                <div className="flex gap-2">
+                    {session.limitMinutes && <Badge variant="outline" className="font-mono text-[10px] uppercase border-primary/30">{session.limitMinutes}M</Badge>}
+                    <Badge className={cn(
+                        "animate-pulse border-white border-2 font-black",
+                        isTimeUp ? "bg-destructive hover:bg-destructive" : "bg-emerald-500 hover:bg-emerald-500"
+                    )}>
+                        {isTimeUp ? "TIME UP" : "LIVE"}
+                    </Badge>
                 </div>
-                <div className="text-center mt-2 text-xs text-muted-foreground uppercase font-bold tracking-widest">
-                    Elapsed Time
+            </CardHeader>
+            <CardContent className="py-8 relative">
+                {isTimeUp && (
+                    <div className="absolute top-2 left-1/2 -translate-x-1/2">
+                        <Badge variant="destructive" className="animate-bounce font-black flex gap-1 items-center">
+                            <Bell className="h-3 w-3" /> ALERT
+                        </Badge>
+                    </div>
+                )}
+                <div className={cn(
+                    "text-5xl font-black text-center font-mono tracking-tighter",
+                    isTimeUp ? "text-destructive" : "text-primary"
+                )}>
+                    {remaining !== null ? formatDuration(remaining) : formatDuration(elapsed)}
+                </div>
+                <div className="text-center mt-2 text-[10px] text-muted-foreground uppercase font-black tracking-widest flex items-center justify-center gap-2">
+                    {remaining !== null ? (
+                        <><Timer className="h-3 w-3" /> Remaining Time</>
+                    ) : (
+                        <><Clock className="h-3 w-3" /> Elapsed Time</>
+                    )}
                 </div>
             </CardContent>
             <CardFooter className="grid grid-cols-2 gap-2 bg-muted/30 pt-3">
-                <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={handleCancel}>
+                <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 font-bold" onClick={handleCancel}>
                     Cancel
                 </Button>
-                <Button variant="destructive" size="sm" className="font-bold" onClick={() => {
+                <Button variant={isTimeUp ? "destructive" : "default"} size="sm" className="font-black" onClick={() => {
                     setCost(calculateSuggestedCost())
                     setIsEndOpen(true)
                 }}>
-                    <Square className="h-3 w-3 mr-2 fill-current" /> Finish
+                    <Square className="h-3 w-3 mr-2 fill-current" /> FINISH
                 </Button>
             </CardFooter>
 
             <Dialog open={isEndOpen} onOpenChange={setIsEndOpen}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Complete Session</DialogTitle>
+                        <DialogTitle>Complete Session (Post {postNumber})</DialogTitle>
                         <DialogDescription>
-                            Duration: {Math.ceil(elapsed / 60)} minutes<br />
-                            Rate: 5 DH per 14-min match
+                            Total Duration: {Math.ceil(elapsed / 60)} minutes<br />
+                            Standard Rate: 5 DH per 14-min match
                         </DialogDescription>
                     </DialogHeader>
                     <div className="py-4 space-y-4">
                         <div className="space-y-2">
-                            <Label>Session Cost (DH)</Label>
+                            <Label className="font-black uppercase text-xs tracking-widest text-muted-foreground">Session Cost (DH)</Label>
                             <div className="relative">
                                 <Input
                                     type="number"
                                     value={cost}
                                     onChange={e => setCost(parseFloat(e.target.value))}
-                                    className="text-2xl font-black h-12 pr-12"
+                                    className="text-2xl font-black h-14 border-2 pr-12 text-primary"
                                 />
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold text-muted-foreground">DH</span>
+                                <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-muted-foreground">DH</span>
                             </div>
                         </div>
                         <div className="flex gap-2">
-                            <Button variant="outline" className="flex-1 text-xs" onClick={() => setCost(calculateSuggestedCost())}>
-                                Reset to Suggested ({calculateSuggestedCost()} DH)
+                            <Button variant="outline" className="flex-1 font-bold text-xs" onClick={() => setCost(calculateSuggestedCost())}>
+                                <Clock className="h-3 w-3 mr-2" /> Reset to Suggested ({calculateSuggestedCost()} DH)
                             </Button>
                         </div>
                     </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setIsEndOpen(false)}>Back</Button>
-                        <Button onClick={handleStop} className="bg-emerald-600 hover:bg-emerald-700 font-bold">Collect & Close</Button>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button variant="ghost" onClick={() => setIsEndOpen(false)} className="font-bold">BACK</Button>
+                        <Button onClick={handleStop} className="bg-emerald-600 hover:bg-emerald-700 font-black px-8">COLLECT & CLOSE</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -154,6 +246,9 @@ export const Sessions: React.FC = () => {
     const [activeSessions, setActiveSessions] = useState<Session[]>([])
     const [history, setHistory] = useState<Session[]>([])
     const [loading, setLoading] = useState(true)
+    const [isStartOpen, setIsStartOpen] = useState(false)
+    const [selectedPost, setSelectedPost] = useState<number | null>(null)
+    const [limitMinutes, setLimitMinutes] = useState<number | null>(null)
 
     const fetchData = async () => {
         setLoading(true)
@@ -170,57 +265,78 @@ export const Sessions: React.FC = () => {
 
     useEffect(() => {
         fetchData()
+        // Check for notification permission
+        if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+            Notification.requestPermission()
+        }
     }, [])
 
-    const startNewSession = async () => {
+    const handleStartClick = (post: number) => {
+        setSelectedPost(post)
+        setLimitMinutes(null)
+        setIsStartOpen(true)
+    }
+
+    const startSession = async () => {
+        if (selectedPost === null) return
+
         const result = await window.api.createSession({
             status: 'ACTIVE',
-            startTime: new Date()
+            startTime: new Date(),
+            postNumber: selectedPost,
+            limitMinutes: limitMinutes
         })
-        if (result.success) fetchData()
+
+        if (result.success) {
+            setIsStartOpen(false)
+            fetchData()
+        } else {
+            alert("Error: " + result.error)
+        }
     }
+
+    const presets = [
+        { label: '30 MIN', value: 30 },
+        { label: '1 HR', value: 60 },
+        { label: '1.5 HR', value: 90 },
+        { label: '2 HR', value: 120 },
+    ]
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500">
-            <div className="flex justify-between items-center">
-                <div>
-                    <h1 className="text-3xl font-black tracking-tight">PlayStation Tracker</h1>
-                    <p className="text-muted-foreground">Live console monitoring and session management.</p>
-                </div>
-                <Button onClick={startNewSession} size="lg" className="bg-emerald-600 hover:bg-emerald-700 shadow-lg border-b-4 border-emerald-800 active:border-b-0 active:translate-y-1 transition-all h-14 font-black">
-                    <Plus className="mr-2 h-6 w-6" /> START NEW SESSION
-                </Button>
+            <div>
+                <h1 className="text-3xl font-black tracking-tight">PlayStation Tracker</h1>
+                <p className="text-muted-foreground uppercase font-bold text-xs tracking-widest">Live Multiverse Monitoring • 6 Active Posts</p>
             </div>
 
-            {activeSessions.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {activeSessions.map(s => (
-                        <TimerCard key={s.id} session={s} onComplete={fetchData} />
-                    ))}
-                </div>
-            ) : (
-                <div className="flex flex-col items-center justify-center p-16 border-4 border-dashed rounded-3xl bg-muted/10 opacity-60">
-                    <div className="bg-background p-6 rounded-full shadow-inner mb-4">
-                        <Gamepad2 className="h-12 w-12 text-muted-foreground" />
-                    </div>
-                    <p className="text-xl font-bold text-muted-foreground">No consoles active</p>
-                    <p className="text-sm text-muted-foreground mt-1">Start a new session to begin tracking time.</p>
-                </div>
-            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {POSTS.map(postNum => {
+                    const session = activeSessions.find(s => s.postNumber === postNum)
+                    return (
+                        <TimerCard
+                            key={postNum}
+                            postNumber={postNum}
+                            session={session || null}
+                            onStart={handleStartClick}
+                            onComplete={fetchData}
+                        />
+                    )
+                })}
+            </div>
 
             <div className="space-y-4">
-                <h2 className="text-2xl font-black flex items-center gap-2">
-                    <History className="h-6 w-6 text-primary" /> Session History
+                <h2 className="text-xl font-black flex items-center gap-2 uppercase tracking-tighter">
+                    <History className="h-6 w-6 text-primary" /> Recent History
                 </h2>
                 <div className="rounded-2xl border-2 bg-card overflow-hidden shadow-sm">
                     <Table>
                         <TableHeader className="bg-muted/50">
                             <TableRow>
-                                <TableHead>Console ID</TableHead>
-                                <TableHead>Duration</TableHead>
-                                <TableHead>Charge</TableHead>
-                                <TableHead>Closing Time</TableHead>
-                                <TableHead className="text-right">Status</TableHead>
+                                <TableHead className="font-black text-xs uppercase tracking-widest">Post</TableHead>
+                                <TableHead className="font-black text-xs uppercase tracking-widest">Duration</TableHead>
+                                <TableHead className="font-black text-xs uppercase tracking-widest">Charge</TableHead>
+                                <TableHead className="font-black text-xs uppercase tracking-widest">Target</TableHead>
+                                <TableHead className="font-black text-xs uppercase tracking-widest text-right">Status</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -234,12 +350,15 @@ export const Sessions: React.FC = () => {
                                 </TableRow>
                             ) : history.map(s => (
                                 <TableRow key={s.id} className="hover:bg-muted/30 transition-colors">
-                                    <TableCell className="font-mono font-bold">#{s.id.slice(-6).toUpperCase()}</TableCell>
-                                    <TableCell>{s.duration || 0} min</TableCell>
-                                    <TableCell className="font-mono font-bold">{s.cost ? `${s.cost.toFixed(2)} DH` : '-'}</TableCell>
-                                    <TableCell className="text-sm">{s.endTime ? new Date(s.endTime).toLocaleString() : '-'}</TableCell>
+                                    <TableCell className="font-black">POST {s.postNumber || '-'}</TableCell>
+                                    <TableCell className="font-bold">{s.duration || 0} min</TableCell>
+                                    <TableCell className="font-black text-primary">{s.cost ? `${s.cost.toFixed(2)} DH` : '-'}</TableCell>
+                                    <TableCell className="text-xs font-medium text-muted-foreground">
+                                        {s.limitMinutes ? `${s.limitMinutes}M Fixed` : 'Unlimited'}
+                                    </TableCell>
                                     <TableCell className="text-right">
                                         <Badge variant={s.status === 'COMPLETED' ? 'outline' : 'destructive'} className={cn(
+                                            "font-black text-[10px] uppercase",
                                             s.status === 'COMPLETED' ? "border-emerald-200 text-emerald-700 bg-emerald-50" : ""
                                         )}>
                                             {s.status}
@@ -251,6 +370,79 @@ export const Sessions: React.FC = () => {
                     </Table>
                 </div>
             </div>
+
+            {/* Start Session Dialog */}
+            <Dialog open={isStartOpen} onOpenChange={setIsStartOpen}>
+                <DialogContent className="sm:max-w-[400px]">
+                    <DialogHeader>
+                        <DialogTitle className="text-2xl font-black">START POST {selectedPost}</DialogTitle>
+                        <DialogDescription className="font-bold text-xs uppercase tracking-widest">
+                            Choose session mode for Station {selectedPost}
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="py-6 space-y-6">
+                        <div className="space-y-3">
+                            <Label className="font-black uppercase text-xs tracking-widest text-muted-foreground">Mode Selection</Label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Button
+                                    variant={limitMinutes === null ? "default" : "outline"}
+                                    className={cn("h-20 flex flex-col gap-1 border-2 font-black", limitMinutes === null && "bg-primary text-primary-foreground")}
+                                    onClick={() => setLimitMinutes(null)}
+                                >
+                                    <Infinity className="h-6 w-6" />
+                                    UNLIMITED
+                                </Button>
+                                <Button
+                                    variant={limitMinutes !== null ? "default" : "outline"}
+                                    className={cn("h-20 flex flex-col gap-1 border-2 font-black", limitMinutes !== null && "bg-primary text-primary-foreground")}
+                                    onClick={() => setLimitMinutes(30)}
+                                >
+                                    <Timer className="h-6 w-6" />
+                                    TIMED
+                                </Button>
+                            </div>
+                        </div>
+
+                        {limitMinutes !== null && (
+                            <div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
+                                <div className="space-y-3">
+                                    <Label className="font-black uppercase text-xs tracking-widest text-muted-foreground">Set Duration</Label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {presets.map(p => (
+                                            <Button
+                                                key={p.value}
+                                                variant={limitMinutes === p.value ? "secondary" : "ghost"}
+                                                className={cn("font-black border", limitMinutes === p.value && "bg-primary/10 border-primary")}
+                                                onClick={() => setLimitMinutes(p.value)}
+                                            >
+                                                {p.label}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                    <div className="relative mt-2">
+                                        <Input
+                                            type="number"
+                                            placeholder="Custom Minutes"
+                                            value={limitMinutes}
+                                            onChange={e => setLimitMinutes(parseInt(e.target.value) || 0)}
+                                            className="font-black border-2 h-12 pr-12"
+                                        />
+                                        <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-[10px] text-muted-foreground">MIN</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <DialogFooter>
+                        <Button variant="ghost" onClick={() => setIsStartOpen(false)} className="font-bold">CANCEL</Button>
+                        <Button onClick={startSession} className="bg-emerald-600 hover:bg-emerald-700 font-black h-12 px-8 shadow-lg">
+                            <Plus className="h-5 w-5 mr-2" /> BEGIN SESSION
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

@@ -42,6 +42,8 @@ model Session {
   startTime DateTime  @default(now())
   endTime   DateTime?
   duration  Int?
+  limitMinutes Int?     // NEW: For timed sessions
+  postNumber Int?       // NEW: To identify which PS (1-6)
   cost      Float?
   status    String    @default("ACTIVE")
   createdAt DateTime  @default(now())

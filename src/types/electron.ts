@@ -28,6 +28,8 @@ export interface Session {
     startTime: Date
     endTime: Date | null
     duration: number | null
+    limitMinutes: number | null
+    postNumber: number | null
     cost: number | null
     status: string
     createdAt: Date
