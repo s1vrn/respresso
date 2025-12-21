@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String         @id @default(cuid())
+  name         String
+  password     String
+  role         String         @default("CLIENT")
+  balance      Float          @default(0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  debtPayments DebtPayment[]
+  logs         InventoryLog[]
+  staffOrders  Order[]        @relation("StaffOrders")
+  orders       Order[]        @relation("ClientOrders")
+  sessions     Session[]
+}
+
+model Product {
+  id         String         @id @default(cuid())
+  name       String
+  price      Float
+  type       String
+  category   String?
+  stock      Int            @default(0)
+  imageUrl   String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  logs       InventoryLog[]
+  orderItems OrderItem[]
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  userId    String?
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+  duration  Int?
+  cost      Float?
+  status    String    @default("ACTIVE")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User?     @relation(fields: [userId], references: [id])
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  userId    String?
+  staffId   String?
+  total     Float
+  isPaid    Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  staff     User?       @relation("StaffOrders", fields: [staffId], references: [id])
+  user      User?       @relation("ClientOrders", fields: [userId], references: [id])
+  items     OrderItem[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  price     Float
+  product   Product @relation(fields: [productId], references: [id])
+  order     Order   @relation(fields: [orderId], references: [id])
+}
+
+model InventoryLog {
+  id        String   @id @default(cuid())
+  productId String?
+  userId    String?
+  change    Int
+  cost      Float?   @default(0)
+  type      String
+  note      String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+  product   Product? @relation(fields: [productId], references: [id])
+}
+
+model DebtPayment {
+  id        String   @id @default(cuid())
+  userId    String
+  amount    Float
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}

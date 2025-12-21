@@ -1,0 +1,201 @@
+// Type definitions for the IPC API exposed to the renderer process
+
+export interface User {
+    id: string
+    name: string
+    role: string
+    balance: number
+    createdAt: Date
+    updatedAt: Date
+}
+
+export interface Product {
+    id: string
+    name: string
+    price: number
+    type: string
+    category: string | null
+    stock: number
+    imageUrl: string | null
+    createdAt: Date
+    updatedAt: Date
+}
+
+export interface Session {
+    id: string
+    userId: string | null
+    user: { id: string; name: string } | null
+    startTime: Date
+    endTime: Date | null
+    duration: number | null
+    cost: number | null
+    status: string
+    createdAt: Date
+    updatedAt: Date
+}
+
+export interface OrderItem {
+    id: string
+    orderId: string
+    productId: string
+    product: Product
+    quantity: number
+    price: number
+}
+
+export interface Order {
+    id: string
+    userId: string | null
+    user: { id: string; name: string; role: string } | null
+    staffId: string | null
+    staff: { id: string; name: string } | null
+    items: OrderItem[]
+    total: number
+    isPaid: boolean
+    createdAt: Date
+    updatedAt: Date
+}
+
+export interface InventoryLog {
+    id: string
+    productId: string | null
+    product: Product | null
+    userId: string | null
+    user: { id: string; name: string } | null
+    change: number
+    cost: number | null
+    type: string
+    note: string | null
+    createdAt: Date
+}
+
+export interface DebtPayment {
+    id: string
+    userId: string
+    user: { id: string; name: string }
+    amount: number
+    createdAt: Date
+}
+
+export interface DailyStats {
+    revenue: {
+        total: number
+        cash: number
+        debt: number
+    }
+    expenses: {
+        total: number
+    }
+    orders: {
+        count: number
+        totalAmount: number
+    }
+    sessions: {
+        count: number
+        totalCost: number
+        totalMinutes: number
+    }
+    debtPayments: {
+        total: number
+        count: number
+    }
+    productStats: Record<string, {
+        name: string
+        sold: number
+        revenue: number
+        restocked: number
+    }>
+}
+
+export interface ApiResponse<T> {
+    success: boolean
+    error?: string
+    data?: T
+}
+
+// API interface that will be exposed via window.api
+export interface ElectronAPI {
+    // Auth
+    login: (credentials: { name: string; password: string }) => Promise<{ success: boolean; user?: User; error?: string }>
+    createUser: (data: { name: string; password: string; role: string }) => Promise<{ success: boolean; user?: User; error?: string }>
+
+    // Users
+    getAllUsers: () => Promise<{ success: boolean; users?: User[]; error?: string }>
+    getUserById: (id: string) => Promise<{ success: boolean; user?: User; error?: string }>
+    updateUser: (id: string, data: Partial<User>) => Promise<{ success: boolean; user?: User; error?: string }>
+    deleteUser: (id: string) => Promise<{ success: boolean; error?: string }>
+
+    // Products
+    getAllProducts: () => Promise<{ success: boolean; products?: Product[]; error?: string }>
+    getProductById: (id: string) => Promise<{ success: boolean; product?: Product; error?: string }>
+    createProduct: (data: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>) => Promise<{ success: boolean; product?: Product; error?: string }>
+    updateProduct: (id: string, data: Partial<Product>) => Promise<{ success: boolean; product?: Product; error?: string }>
+    deleteProduct: (id: string) => Promise<{ success: boolean; error?: string }>
+
+    // Orders
+    getAllOrders: () => Promise<{ success: boolean; orders?: Order[]; error?: string }>
+    createOrder: (data: {
+        userId?: string
+        staffId?: string
+        total: number
+        isPaid: boolean
+        items: Array<{ productId: string; quantity: number; price: number }>
+    }) => Promise<{ success: boolean; order?: Order; error?: string }>
+
+    // Sessions
+    getAllSessions: () => Promise<{ success: boolean; sessions?: Session[]; error?: string }>
+    getActiveSessions: () => Promise<{ success: boolean; sessions?: Session[]; error?: string }>
+    createSession: (data: Partial<Session>) => Promise<{ success: boolean; session?: Session; error?: string }>
+    updateSession: (id: string, data: Partial<Session>) => Promise<{ success: boolean; session?: Session; error?: string }>
+
+    // Inventory
+    getInventoryLogs: () => Promise<{ success: boolean; logs?: InventoryLog[]; error?: string }>
+    addInventoryLog: (data: {
+        productId?: string
+        userId?: string
+        change: number
+        cost?: number
+        type: string
+        note?: string
+    }) => Promise<{ success: boolean; log?: InventoryLog; error?: string }>
+
+    // Debt
+    getDebtPayments: (userId?: string) => Promise<{ success: boolean; payments?: DebtPayment[]; error?: string }>
+    addDebtPayment: (data: { userId: string; amount: number }) => Promise<{ success: boolean; payment?: DebtPayment; error?: string }>
+
+    // Reports
+    getAnalytics: (options?: { days?: number }) => Promise<{
+        success: boolean
+        data: {
+            trend: { date: string, revenue: number, cash: number, debt: number }[]
+            categoryData: { name: string, value: number }[]
+            topProducts: { name: string, value: number }[]
+        }
+        error?: string
+    }>
+    getActivityLogs: (options: {
+        page?: number
+        limit?: number
+        userId?: string
+        search?: string
+        type?: string
+        from?: Date
+        to?: Date
+    }) => Promise<{
+        success: boolean
+        logs: any[]
+        totalCount: number
+        totalPages: number
+        error?: string
+    }>
+    getStats: (options: { from: string | Date; to: string | Date; userId?: string }) => Promise<{ success: boolean; stats?: DailyStats; error?: string }>
+
+    // Dashboard
+    getDashboardStats: () => Promise<{ success: boolean; stats?: { userCount: number; activeSessions: number; productCount: number; totalDebt: number }; error?: string }>
+}
+
+declare global {
+    interface Window {
+        api: ElectronAPI
+    }
+}

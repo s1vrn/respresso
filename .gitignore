@@ -1,0 +1,10 @@
+node_modules
+dist
+dist-electron
+release
+source_web_app
+prisma/dev.db
+prisma/dev.db-journal
+.vscode
+.DS_Store
+*.log
