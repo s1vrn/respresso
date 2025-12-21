@@ -1,7 +1,9 @@
 {
   "name": "respresso",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "author": "Bassim Belcheikh",
+  "description": "Professional Management System for Coffee & Gaming Centers",
   "type": "module",
   "scripts": {
     "dev": "vite",
